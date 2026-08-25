@@ -15,22 +15,11 @@ description: "软著信息深度收集 — 按CMMI3和软件工程范式采集�
 
 ## 执行流程
 
-### Step 0：自动填充公司固定信息（硬编码）
+### Step 0：读取配置文件
 
-以下信息自动填充，**不再问用户**：
-
-| 信息项 | 值 |
-|--------|-----|
-| 公司成立日期 | {{company.founding_date}} |
-| 公司名称 | {{company.name}} |
-| 统一社会信用代码 | {{company.credit_code}} |
-| 发表城市 | {{company.publish_city}} |
-| 软件分类 | {{company.software_category}} |
-| 开发硬件环境 | CPU 2GHz+、内存 8G+、硬盘 200G+ |
-| 运行硬件环境 | CPU 2GHz+、内存 8G+、硬盘 200G+ |
-| 开发操作系统 | Windows 10/11、Linux |
-| 运行平台 | Windows、Linux、MacOS（浏览器端） |
-| 运行支撑环境 | JDK 17+、MySQL 8.0+、Redis 7.x、Nginx 1.20+ |
+从 `{{user_home}}\.claude\config.md` 加载：
+- 公司固定信息（自动填充，不再问用户）
+- 路径配置（`{{reference_dirs}}`、`{{template_dir}}`、`{{default_output_dir}}`）
 
 ### Step 1：确认文档输出路径（必须）
 
@@ -47,6 +36,15 @@ options:
 ```
 
 **禁止自动选择或猜测路径。**
+
+确认后，**自动在该路径下创建目录结构**：
+```
+{输出路径}\{软件名称}\
+├── result\            ← 软著文档
+├── .tmp\              ← 临时脚本
+├── printscreens\      ← 使用说明书截图
+└── illustrations\     ← 设计说明书插图
+```
 
 ### Step 2：深度问答
 
@@ -129,6 +127,14 @@ options:
   - 中风险（橙色）：有多种合理选择，AI 选了其中一种
   - 高风险（红色）：可能不符合用户实际需求，强烈建议审查
 
+**`ai_decisions` 列表格式：**
+```
+ai_decisions = [
+    {"field": "后端框架", "value": "Spring Boot 3.2", "risk": "low", "reason": "行业标准"},
+    ...
+]
+```
+
 ### Step 4：兜底 2 — 参考材料
 
 所有问答结束后，使用 `AskUserQuestion` 询问：
@@ -166,17 +172,20 @@ options:
 
 ### 必须做到
 - ✅ 先确认文档输出路径（第一步）
+- ✅ 自动创建 `result\`、`.tmp\`、`printscreens\`、`illustrations\` 目录
 - ✅ 自动填充公司固定信息，不再问用户
 - ✅ 每个问题使用 AskUserQuestion 提供选择题
 - ✅ 每个模块必须收集输入/处理/输出
-- ✅ AI 代决策必须标注风险等级
+- ✅ AI 代决策必须标注风险等级并记录到 `ai_decisions`
+- ✅ `ai_decisions` 必须传递给后续步骤
 - ✅ 最终输出信息汇总供用户确认
 
 ### 禁止做到
--  不问用户就直接用 AI 代决策（除非用户明确选"跳过"）
+- ❌ 不问用户就直接用 AI 代决策（除非用户明确选"跳过"）
 - ❌ 扫描或遍历任何文件夹/目录
 - ❌ 自动选择或猜测文档输出路径
 - ❌ 信息未确认就进入下一步
+- ❌ `ai_decisions` 信息丢失或中断传递
 
 ## 关联记忆
 
