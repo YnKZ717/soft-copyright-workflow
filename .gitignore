@@ -1,0 +1,35 @@
+# 软著工作流 .gitignore
+
+# 敏感配置文件（含公司信息和实际路径）
+config.md
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE 配置
+.vscode/
+.idea/
+
+# 临时文件
+*.tmp
+*.temp
+.tmp/
+
+# 生成的文档（可选，按需取消注释）
+# *.docx
+# *.pdf
+
+# 插图（可选，按需取消注释）
+# illustrations/
+
+# 大文件
+*.mp4
+*.avi
+*.mov
