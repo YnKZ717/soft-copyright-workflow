@@ -144,64 +144,142 @@ description: "设计说明书自动生成 — 根据软件信息撰写符合软�
 
 **图表保存在：** 同级 `illustrations\` 目录
 
-### 异色字体标注规范（️ 必须严格执行）
+### 异色字体标注规范（️ 必须严格执行 — 标记法）
 
-**核心原则：颜色跟信息来源走，不跟内容类型走。**
+**核心原则：AI 不在生成时标色，而是在每段末尾加来源标记，由后置脚本统一标色。**
 
-#### 来源判断规则
+#### 标记格式
 
-生成文档时，**每写一段内容都要查 `collected_info` 中的来源标记**：
+每写一段内容（包括章节标题、正文段落、表格单元格），**必须在该段末尾加标记**：
 
-| 场景 | 颜色 | 判断依据 |
-|------|------|---------|
-| 封面标题、公司名称 | 黑色 | 用户明确提供的信息 |
-| 模块归属用户（用户指定的模块名）的功能描述 | 黑色 | `collected_info` 中该模块 `source: "user"` |
-| 模块归属用户的算法/异常处理/输入/输出 | **按风险标色** | 模块名是用户的，但这些内容是 AI 独立创作的 → `source: "ai"` |
-| 模块归属 AI（AI 补的模块）的所有内容 | **按风险标色** | 整个模块 `source: "ai"` |
-| 用户完全没涉及的章节（安全设计、异常处理设计等） | **按风险标色** | 全部 `source: "ai"` |
-| 插图占位符 `[插图：...]` | 橙色 | 标记待替换 |
+```
+//by user        → 黑色（不标色，用户明确提供的内容）
+//by ai:low      → 蓝色（AI 代决策，低风险）
+//by ai:medium   → 橙色（AI 代决策，中风险）
+//by ai:high     → 红色（AI 代决策，高风险）
+```
 
-**风险等级从 `collected_info` 中读取：**
-- `risk: "low"` → 蓝色 `RGB(0x2E, 0x86, 0xC1)`
-- `risk: "medium"` → 橙色 `RGB(0xE6, 0x95, 0x2A)`
-- `risk: "high"` → 红色 `RGB(0xC0, 0x39, 0x2B)`
+**四个选项，无默认。每段必须有且仅有其中一个标记。**
 
-**如果 `collected_info` 中某项没有来源标记（如单步调用未走 collect-info）：**
-- 功能描述（用户提供了模块名时）→ 黑色
-- 算法、异常处理、输入输出、安全设计、数据库设计等 → 橙色（默认中风险）
+#### 标记判断规则
+
+| 场景 | 标记 | 说明 |
+|------|------|------|
+| 封面标题、公司名称 | `//by user` | 用户明确提供 |
+| 模块归属用户的功能描述 | `//by user` | 用户指定了该模块 |
+| 模块归属用户的算法/异常/输入/输出 | `//by ai:high` | AI 独立创作 |
+| 模块归属 AI 的所有内容 | `//by ai:medium` 或 `//by ai:high` | 按风险等级 |
+| 用户未涉及的章节（安全/异常设计等） | `//by ai:medium` | AI 补充 |
+| 插图占位符 | `//by ai:medium` | 标记待替换 |
+
+#### 标记示例
+
+```
+本系统采用分层架构设计...
+//by ai:medium
+
+FUNCTION processInput(data):
+    // 步骤1：参数校验
+//by ai:high
+
+上下文解析模块对用户输入...
+//by user
+```
+
+表格在最后一个单元格末尾加标记：
+```
+| 并发量 | 500 | //by ai:low |
+```
 
 #### 关键约束
-- 拿不准的 → **默认橙色**
-- **宁可多标不可漏标**
-- **禁止整篇黑色**：如果生成的文档所有正文都是黑色，说明你没有执行本规范
+- **每段必须有标记**，不允许遗漏
+- 拿不准风险等级 → 用 `//by ai:medium`
+- **禁止整篇无标记**
 
-#### python-docx 代码模板（必须使用）
+### Step 5.7：自检标记
+
+文档生成完毕后，**AI 必须重新读一遍文档**，逐段检查：
+- [ ] 每个段落末尾是否有 `//by user` / `//by ai:low` / `//by ai:medium` / `//by ai:high` 之一
+- [ ] 无标记的段落 → 补上标记
+- [ ] 标记格式错误的 → 修正
+
+### Step 5.8：后置脚本标色
+
+自检通过后，**生成并运行以下 Python 脚本**处理文档：
 
 ```python
+import re
+import sys
 from docx import Document
-from docx.shared import Pt, RGBColor, Emu
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import RGBColor
 from docx.oxml.ns import qn
 
-# 颜色定义
-COLOR_BLACK  = RGBColor(0x00, 0x00, 0x00)
-COLOR_BLUE   = RGBColor(0x2E, 0x86, 0xC1)   # 低风险
-COLOR_ORANGE = RGBColor(0xE6, 0x95, 0x2A)   # 中风险
-COLOR_RED    = RGBColor(0xC0, 0x39, 0x2B)   # 高风险
+COLORS = {
+    'user':  None,  # 不标色
+    'low':    RGBColor(0x2E, 0x86, 0xC1),
+    'medium': RGBColor(0xE6, 0x95, 0x2A),
+    'high':   RGBColor(0xC0, 0x39, 0x2B),
+}
 
-def add_paragraph(doc, text, font_size=12, bold=False, color=COLOR_BLACK, align=WD_ALIGN_PARAGRAPH.JUSTIFY):
-    """添加一个带颜色的段落"""
-    p = doc.add_paragraph()
-    p.alignment = align
-    run = p.add_run(text)
+MARKER_PATTERN = re.compile(r'\s*//by (user|ai:(?:low|medium|high))\s*$')
+
+def process_paragraph(para):
+    """处理一个段落：识别标记、标色、删除标记"""
+    text = para.text
+    m = MARKER_PATTERN.search(text)
+    if not m:
+        return False  # 无标记
+    tag = m.group(1)
+    color = COLORS.get(tag.split(':')[-1] if ':' in tag else tag)
+    # 删除标记文本
+    clean_text = MARKER_PATTERN.sub('', text).rstrip()
+    # 清空段落所有 run，重新写入
+    for run in para.runs:
+        run.text = ''
+    if para.runs:
+        para.runs[0].text = clean_text
+    else:
+        run = para.add_run(clean_text)
+    run = para.runs[0]
     run.font.name = '宋体'
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-    run.font.size = Pt(font_size)
-    run.bold = bold
-    run.font.color.rgb = color
-    if align == WD_ALIGN_PARAGRAPH.JUSTIFY:
-        p.paragraph_format.line_spacing = 1.5
-    return p
+    # 设置颜色
+    if color is not None:
+        run.font.color.rgb = color
+    else:
+        run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+    return True
+
+def process_table(table):
+    """处理表格：对每个单元格做同样的事"""
+    for row in table.rows:
+        for cell in row.cells:
+            for para in cell.paragraphs:
+                process_paragraph(para)
+
+def main():
+    docx_path = sys.argv[1]
+    doc = Document(docx_path)
+    missed = 0
+    for para in doc.paragraphs:
+        if para.text.strip() and not process_paragraph(para):
+            missed += 1
+    for table in doc.tables:
+        process_table(table)
+    if missed > 0:
+        print(f'ERROR: {missed} 个段落无标记，请补标后重试')
+        sys.exit(1)
+    doc.save(docx_path)
+    print(f'OK: 标色完成，共处理 {len(doc.paragraphs)} 段落 + {len(doc.tables)} 表格')
+
+if __name__ == '__main__':
+    main()
+```
+
+**脚本行为：**
+- 检测到无标记段落 → 打印 `ERROR: N 个段落无标记` → **退出码 1，不保存文档**
+- 全部有标记 → 标色 → 删除标记 → 保存文档 → 打印 `OK`
+- AI 收到 ERROR 后回到 Step 5.7 补标，重新运行脚本
 
 # === 使用示例 ===
 # 封面标题（黑色）
