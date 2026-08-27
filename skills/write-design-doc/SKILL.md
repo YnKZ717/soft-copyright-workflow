@@ -5,6 +5,10 @@ description: "设计说明书自动生成 — 根据软件信息撰写符合软�
 
 # 设计说明书撰写技能
 
+你是上海智灵新境科技有限公司的软著申请材料制作专员，精通 CMMI3 三级软件工程过程规范，熟悉国家版权局软件著作权登记申请的格式要求和审查标准。你输出的所有文档将直接提交给版权局，必须严谨、专业、符合规范。
+
+你同时是一名资深软件架构师，擅长撰写符合 CMMI3 TS 过程域的设计说明书，文档深度满足≥15000字要求。
+
 当用户需要撰写软著设计说明书时触发。
 
 ## 触发条件
@@ -140,34 +144,86 @@ description: "设计说明书自动生成 — 根据软件信息撰写符合软�
 
 **图表保存在：** 同级 `illustrations\` 目录
 
-### 异色字体标注规范（每个生成步骤后必须执行）
+### 异色字体标注规范（️ 必须严格执行）
 
-**核心原则：AI 自己补全/生成的内容标色，用户明确提供的不标。**
+**核心原则：颜色跟信息来源走，不跟内容类型走。**
 
-**判断规则：**
-1. 用户通过 AskUserQuestion **明确选择了某个选项**的内容 → 黑色（不标色）
-2. 用户选择"跳过"，由 **AI 自主决定**的内容 → 按风险等级标色
-3. `ai_decisions` 列表存在时，**优先使用列表中的风险等级**；不存在时，AI **自主评估风险**
+#### 来源判断规则
 
-**风险自评标准：**
-- **低风险（蓝色）**：行业标准做法、通用配置（如 Spring Boot、MySQL、JWT）
-- **中风险（橙色）**：有多种合理选择，AI 选了其中一种（如数据库表结构设计、并发量估算）
-- **高风险（红色）**：可能不符合用户实际需求、强烈建议审查（如具体业务规则、权限模型细节）
+生成文档时，**每写一段内容都要查 `collected_info` 中的来源标记**：
 
-**python-docx 实现：**
+| 场景 | 颜色 | 判断依据 |
+|------|------|---------|
+| 封面标题、公司名称 | 黑色 | 用户明确提供的信息 |
+| 模块归属用户（用户指定的模块名）的功能描述 | 黑色 | `collected_info` 中该模块 `source: "user"` |
+| 模块归属用户的算法/异常处理/输入/输出 | **按风险标色** | 模块名是用户的，但这些内容是 AI 独立创作的 → `source: "ai"` |
+| 模块归属 AI（AI 补的模块）的所有内容 | **按风险标色** | 整个模块 `source: "ai"` |
+| 用户完全没涉及的章节（安全设计、异常处理设计等） | **按风险标色** | 全部 `source: "ai"` |
+| 插图占位符 `[插图：...]` | 橙色 | 标记待替换 |
+
+**风险等级从 `collected_info` 中读取：**
+- `risk: "low"` → 蓝色 `RGB(0x2E, 0x86, 0xC1)`
+- `risk: "medium"` → 橙色 `RGB(0xE6, 0x95, 0x2A)`
+- `risk: "high"` → 红色 `RGB(0xC0, 0x39, 0x2B)`
+
+**如果 `collected_info` 中某项没有来源标记（如单步调用未走 collect-info）：**
+- 功能描述（用户提供了模块名时）→ 黑色
+- 算法、异常处理、输入输出、安全设计、数据库设计等 → 橙色（默认中风险）
+
+#### 关键约束
+- 拿不准的 → **默认橙色**
+- **宁可多标不可漏标**
+- **禁止整篇黑色**：如果生成的文档所有正文都是黑色，说明你没有执行本规范
+
+#### python-docx 代码模板（必须使用）
+
 ```python
-from docx.shared import RGBColor
+from docx import Document
+from docx.shared import Pt, RGBColor, Emu
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 
-def mark_risk(run, risk_level):
-    colors = {
-        'low':    RGBColor(0x2E, 0x86, 0xC1),  # 蓝色
-        'medium': RGBColor(0xE6, 0x95, 0x2A),  # 橙色
-        'high':   RGBColor(0xC0, 0x39, 0x2B),  # 红色
-    }
-    run.font.color.rgb = colors.get(risk_level, RGBColor(0, 0, 0))
+# 颜色定义
+COLOR_BLACK  = RGBColor(0x00, 0x00, 0x00)
+COLOR_BLUE   = RGBColor(0x2E, 0x86, 0xC1)   # 低风险
+COLOR_ORANGE = RGBColor(0xE6, 0x95, 0x2A)   # 中风险
+COLOR_RED    = RGBColor(0xC0, 0x39, 0x2B)   # 高风险
+
+def add_paragraph(doc, text, font_size=12, bold=False, color=COLOR_BLACK, align=WD_ALIGN_PARAGRAPH.JUSTIFY):
+    """添加一个带颜色的段落"""
+    p = doc.add_paragraph()
+    p.alignment = align
+    run = p.add_run(text)
+    run.font.name = '宋体'
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+    run.font.size = Pt(font_size)
+    run.bold = bold
+    run.font.color.rgb = color
+    if align == WD_ALIGN_PARAGRAPH.JUSTIFY:
+        p.paragraph_format.line_spacing = 1.5
+    return p
+
+# === 使用示例 ===
+# 封面标题（黑色）
+add_paragraph(doc, '软件全称V1.0', font_size=36, bold=True, color=COLOR_BLACK, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+# 章节标题（黑色）
+add_paragraph(doc, '第1章 引言', font_size=16, bold=True, color=COLOR_BLACK, align=WD_ALIGN_PARAGRAPH.LEFT)
+
+# 编写目的（蓝色 - AI 写的行业描述）
+add_paragraph(doc, '本文档描述了系统的设计方案...', font_size=12, color=COLOR_BLUE)
+
+# 非功能性需求（橙色 - AI 估算的并发量）
+add_paragraph(doc, '系统初期支持500并发用户...', font_size=12, color=COLOR_ORANGE)
+
+# 核心算法（红色 - AI 写的伪代码）
+add_paragraph(doc, 'FUNCTION processInput(data):', font_size=12, color=COLOR_RED)
 ```
 
-**执行时机：** 在文档生成过程中，每写入一段 AI 代决策的内容时，立即对其 run 设置颜色。不要等生成完再批量修改。
+#### 执行要求
+1. **生成过程中直接标色**：每调用一次 `add_paragraph` 就传入正确的 color 参数，不要等生成完再批量修改
+2. **宁可多标不可漏标**：拿不准的一律标橙色
+3. **禁止整篇黑色**：如果生成的文档所有正文都是黑色，说明你没有执行本规范
 ## 行为约束
 
 ### 必须做到
