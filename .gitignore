@@ -33,3 +33,24 @@ desktop.ini
 *.mp4
 *.avi
 *.mov
+
+# Claude Code 内部文件
+.last-cleanup
+.last-update-result.json
+backups/
+cache/
+daemon.lock
+daemon.status.json
+daemon/
+file-history/
+history.jsonl
+ide/
+jobs/
+plans/
+plugins/
+projects/
+sessions/
+settings.json
+shell-snapshots/
+telemetry/
+tmp/
